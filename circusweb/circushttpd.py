@@ -6,6 +6,7 @@ import json
 from base64 import b64encode, b64decode
 from zmq.eventloop import ioloop
 from collections import defaultdict
+import socket
 
 # Install zmq.eventloop to replace tornado.ioloop
 ioloop.install()
@@ -254,7 +255,7 @@ class KillProcessHandler(BaseHandler):
                                  pid=pid),
                              endpoint=b64decode(endpoint),
                              args=(name, pid),
-                             redirect_url=self.reverse_url('watcher', name))
+                             redirect_url=self.reverse_url('watcher', endpoint, name))
         self.redirect(url)
 
 
@@ -269,7 +270,7 @@ class DecrProcHandler(BaseHandler):
                              message=msg.format(watcher=name),
                              endpoint=b64decode(endpoint),
                              args=(name,),
-                             redirect_url=self.reverse_url('watcher', name))
+                             redirect_url=self.reverse_url('watcher', endpoint, name))
         self.redirect(url)
 
 
@@ -284,7 +285,7 @@ class IncrProcHandler(BaseHandler):
                              message=msg.format(watcher=name),
                              endpoint=b64decode(endpoint),
                              args=(name,),
-                             redirect_url=self.reverse_url('watcher', name))
+                             redirect_url=self.reverse_url('watcher', endpoint, name))
         self.redirect(url)
 
 
@@ -293,12 +294,12 @@ class SocketsHandler(BaseHandler):
     @require_logged_user
     @tornado.web.asynchronous
     @gen.coroutine
-    def get(self):
+    def get(self, endpoint):
         controller = get_controller()
-        endpoints = self.session.endpoints
-        sockets = yield gen.Task(controller.get_sockets, endpoints=endpoints)
+        endpoint = b64decode(endpoint)
+        sockets = yield gen.Task(controller.get_sockets, endpoint=endpoint)
         self.finish(
-            self.render_template('sockets.html', sockets=sockets))
+            self.render_template('sockets.html', sockets=sockets, endpoint=endpoint))
 
 
 class Application(tornado.web.Application):
@@ -323,7 +324,7 @@ class Application(tornado.web.Application):
                     DecrProcHandler, name="decr_proc"),
             URLSpec(r'/([^/]+)/watcher/([^/]+)/process/incr/',
                     IncrProcHandler, name="incr_proc"),
-            URLSpec(r'/sockets/',
+            URLSpec(r'/([^/]+)/sockets/',
                     SocketsHandler, name="sockets"),
         ]
 
@@ -348,7 +349,7 @@ def main():
     define("port", default=8080, type=int)
     parser = argparse.ArgumentParser(description='Run the Web Console')
 
-    parser.add_argument('--fd', help='FD', default=None)
+    parser.add_argument('--fd', help='FD', default=None, type=int)
     parser.add_argument('--host', help='Host', default='0.0.0.0')
     parser.add_argument('--port', help='port', default=8080)
     parser.add_argument('--endpoint', default=None,
@@ -377,19 +378,25 @@ def main():
     # configure the logger
     configure_logger(logger, args.loglevel, args.logoutput)
 
-    if args.endpoint is not None:
-        connect_to_circus(args.endpoint, args.ssh)
-
-    options.parse_command_line()
-
     # Get the tornado ioloop singleton
     loop = tornado.ioloop.IOLoop.instance()
 
-    app.auto_discovery = AutoDiscovery(args.multicast, loop)
+    if args.endpoint is not None:
+        connect_to_circus(loop, args.endpoint, args.ssh)
 
+    app.auto_discovery = AutoDiscovery(args.multicast, loop)
     http_server = tornado.httpserver.HTTPServer(app)
-    http_server.listen(options.port, "0.0.0.0")
-    logger.info("Starting circus web ui on port %s" % (options.port))
+
+    if args.fd:
+        sock = socket.fromfd(args.fd, socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.setblocking(0)
+        http_server.add_sockets([sock])
+        logger.info("Starting circus web ui on fd %d" % args.fd)
+    else:
+        http_server.listen(args.port, args.host)
+        logger.info("Starting circus web ui on %s:%s" % (args.host, args.port))
+
     loop.start()
 
 

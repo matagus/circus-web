@@ -63,9 +63,9 @@
         <div>
             <span style="display: inline-block; float: left;" class="label">${name or watcher}</span>
 	        <span class="age-stat" id="${watcher}_last_age"></span>
-            
+
             %if display_status:
-            <div style="width: 20px; float: right; margin-right: 10px;"><a class="${controller.get_status(watcher, endpoint)}" title="${controller.get_status(watcher, endpoint)}" href="${reverse_url('switch_status', name=watcher)}"></a></div>
+            <div style="width: 20px; float: right; margin-right: 10px;"><a class="${controller.get_status(watcher, endpoint)}" title="${controller.get_status(watcher, endpoint)}" href="${reverse_url('switch_status', b64encode(endpoint), watcher)}"></a></div>
             %endif
         </div>
 
@@ -98,7 +98,7 @@
  %endif
 
  %if controller.get_client(endpoint).use_sockets:
- ${draw_graph_div('socket-stats', 'Socket Activity (<a href="' + reverse_url('sockets') + '">see all the sockets</a>)', socket=True, endpoint=endpoint)}
+ ${draw_graph_div('socket-stats', 'Socket Activity (<a href="' + reverse_url('sockets', b64encode(endpoint)) + '">see all the sockets for the endpoint</a>)', socket=True, endpoint=endpoint)}
  %endif
 
  %for plugin in controller.get_client(endpoint).plugins:
